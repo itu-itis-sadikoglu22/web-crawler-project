@@ -36,7 +36,11 @@ class Crawler:
         with self.visited_lock:
             self.visited_by_job[job_id].add(normalized_origin)
 
-        self.task_queue.put((job_id, normalized_origin, normalized_origin, 0))
+        frontier_rows = self.storage.get_pending_frontier(job_id, limit=1)
+        if frontier_rows:
+            frontier_id = frontier_rows[0]["id"]
+            self.storage.mark_frontier_in_progress(frontier_id)
+            self.task_queue.put((frontier_id, job_id, normalized_origin, normalized_origin, 0))
 
         self.stop_event.clear()
         self._start_workers()
@@ -53,7 +57,7 @@ class Crawler:
     def _worker_loop(self) -> None:
         while not self.stop_event.is_set():
             try:
-                job_id, url, origin_url, depth = self.task_queue.get(timeout=1)
+                frontier_id, job_id, url, origin_url, depth = self.task_queue.get(timeout=1)
             except queue.Empty:
                 continue
 
@@ -61,16 +65,17 @@ class Crawler:
                 self.active_workers += 1
 
             try:
-                self._process_url(job_id, url, origin_url, depth)
+                self._process_url(frontier_id, job_id, url, origin_url, depth)
             finally:
                 with self.active_workers_lock:
                     self.active_workers -= 1
                 self.task_queue.task_done()
 
-    def _process_url(self, job_id: int, url: str, origin_url: str, depth: int) -> None:
+    def _process_url(self, frontier_id: int, job_id: int, url: str, origin_url: str, depth: int) -> None:
         fetch_result = fetch_url(url)
 
         if not fetch_result["success"]:
+            self.storage.mark_frontier_failed(frontier_id)
             return
 
         parsed = parse_html(url, fetch_result["html"])
@@ -92,28 +97,41 @@ class Crawler:
         next_depth = depth + 1
 
         job_row = self._get_job(job_id)
-        if next_depth > job_row["max_depth"]:
-            return
+        if next_depth <= job_row["max_depth"]:
+            for discovered_url in links:
+                normalized = normalize_url(url, discovered_url)
+                if not normalized:
+                    continue
 
-        for discovered_url in links:
-            normalized = normalize_url(url, discovered_url)
-            if not normalized:
-                continue
+                should_add = False
+                with self.visited_lock:
+                    if normalized not in self.visited_by_job[job_id]:
+                        self.visited_by_job[job_id].add(normalized)
+                        should_add = True
 
-            should_add = False
-            with self.visited_lock:
-                if normalized not in self.visited_by_job[job_id]:
-                    self.visited_by_job[job_id].add(normalized)
-                    should_add = True
+                if not should_add:
+                    continue
 
-            if not should_add:
-                continue
+                inserted = self.storage.add_to_frontier(job_id, normalized, next_depth)
+                self.storage.add_discovery(job_id, normalized, origin_url, next_depth)
 
-            inserted = self.storage.add_to_frontier(job_id, normalized, next_depth)
-            self.storage.add_discovery(job_id, normalized, origin_url, next_depth)
+                if inserted:
+                    frontier_rows = self.storage.get_pending_frontier(job_id, limit=100)
+                    matching_row = next(
+                        (
+                            row
+                            for row in frontier_rows
+                            if row["url"] == normalized and row["depth"] == next_depth
+                        ),
+                        None,
+                    )
+                    if matching_row:
+                        self.storage.mark_frontier_in_progress(matching_row["id"])
+                        self.task_queue.put(
+                            (matching_row["id"], job_id, normalized, origin_url, next_depth)
+                        )
 
-            if inserted:
-                self.task_queue.put((job_id, normalized, origin_url, next_depth))
+        self.storage.mark_frontier_done(frontier_id)
 
     def _get_job(self, job_id: int):
         conn = self.storage._get_connection()
