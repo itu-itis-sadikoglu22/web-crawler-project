@@ -1,16 +1,19 @@
-from app.fetcher import fetch_url
-from app.parser import parse_html
+from app.crawler import Crawler
+from app.storage import Storage
 
 
 def main():
-    result = fetch_url("https://example.com")
-    print(result["success"], result["status_code"], result["error"])
+    storage = Storage()
+    crawler = Crawler(storage=storage, worker_count=4, max_queue_size=100)
 
-    if result["success"]:
-        parsed = parse_html(result["url"], result["html"])
-        print("Title:", parsed["title"])
-        print("Link count:", len(parsed["links"]))
-        print("First links:", parsed["links"][:5])
+    job_id = crawler.start_indexing("https://example.com", 1)
+    print(f"Started job: {job_id}")
+
+    crawler.wait_until_done()
+
+    print("Crawl finished.")
+    print("DB status:", storage.get_status())
+    print("Runtime status:", crawler.get_runtime_status())
 
 
 if __name__ == "__main__":
