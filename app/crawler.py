@@ -141,8 +141,10 @@ class Crawler:
         ).fetchone()
         return row
 
-    def wait_until_done(self) -> None:
+    def wait_until_done(self, job_id: int | None = None) -> None:
         self.task_queue.join()
+        if job_id is not None:
+            self.storage.mark_job_completed(job_id)
 
     def get_runtime_status(self) -> dict:
         with self.active_workers_lock:

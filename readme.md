@@ -72,3 +72,6 @@ web-crawler-project/
 ├── recommendation.md
 ├── requirements.txt
 └── run.py
+
+
+Some discovered URLs may fail during crawling due to network conditions, unsupported content, or remote server behavior. The crawler records these failures without interrupting the overall indexing job.

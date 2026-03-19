@@ -1,7 +1,7 @@
 import sqlite3
 import threading
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
 
 DB_PATH = Path("data/crawler.db")
@@ -99,6 +99,18 @@ class Storage:
         )
         conn.commit()
         return cursor.lastrowid
+
+    def mark_job_completed(self, job_id: int) -> None:
+        conn = self._get_connection()
+        conn.execute(
+            """
+            UPDATE crawl_jobs
+            SET status = 'completed'
+            WHERE job_id = ?
+            """,
+            (job_id,),
+        )
+        conn.commit()
 
     def add_to_frontier(self, job_id: int, url: str, depth: int) -> bool:
         conn = self._get_connection()
@@ -229,8 +241,7 @@ class Storage:
             WHERE ii.term IN ({placeholders})
             GROUP BY ii.page_url, d.origin_url, d.depth
             ORDER BY score DESC, d.depth ASC, ii.page_url ASC
-            """
-            ,
+            """,
             query_terms,
         )
         return cursor.fetchall()

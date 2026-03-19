@@ -51,7 +51,7 @@ def handle_index(args):
         except KeyboardInterrupt:
             print("\nStopping watcher...")
 
-    crawler.wait_until_done()
+    crawler.wait_until_done(job_id)
     format_status(storage, crawler)
     print("Indexing complete.")
 
