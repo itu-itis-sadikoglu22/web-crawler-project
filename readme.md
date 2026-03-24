@@ -1,3 +1,5 @@
+# https://github.com/itu-itis-sadikoglu22/web-crawler-project
+
 # Web Crawler Project
 
 This project is a single-machine web crawler and search tool built for a take-home systems exercise. Given an origin URL and a depth limit, it crawls pages, stores discovered content locally, and supports searching indexed pages while crawling is still in progress.
